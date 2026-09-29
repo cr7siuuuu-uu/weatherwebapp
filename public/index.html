@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WeatherFit AI - 지도 연동 실시간 날씨 & 무드 패션 룩북</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f7ff',
+              100: '#e0effe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+    }
+    #map {
+      height: 100%;
+      min-height: 400px;
+      z-index: 1;
+      border-radius: 1rem;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.05);
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.5);
+      border-radius: 4px;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 1rem;
+      padding: 0.25rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-800 dark:text-slate-100 min-h-screen flex flex-col transition-colors duration-300">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-30 bg-white/85 dark:bg-slate-800/85 backdrop-blur-md border-b border-slate-200 dark:border-slate-700 px-4 py-3 shadow-sm">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      
+      <!-- Brand Logo -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+          <i class="fa-solid fa-shirt text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-extrabold text-xl leading-none bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+            WeatherFit <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 ml-1 font-semibold">Mood & Sensitivity Fit</span>
+          </h1>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">실시간 날씨 • 전세계 도시 지도 연동 • Gemini AI 무드 착장 화보</p>
+        </div>
+      </div>
+
+      <!-- Quick Location Search Bar (Desktop) -->
+      <div class="flex-1 max-w-md hidden md:block relative z-40">
+        <div class="relative">
+          <input type="text" id="searchInput" placeholder="전 세계 모든 도시 검색 (예: 수원, 서울, 도쿄, 뉴욕, 파리, 강릉...)" 
+            autocomplete="off"
+            class="w-full pl-10 pr-20 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner">
+          <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3 text-slate-400 text-sm"></i>
+          <button id="searchBtn" class="absolute right-1.5 top-1 px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition flex items-center gap-1">
+            <span id="searchBtnIcon"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <span id="searchBtnText">검색</span>
+          </button>
+        </div>
+
+        <!-- Autocomplete Suggestions Dropdown (Desktop) -->
+        <div id="searchSuggestions" class="hidden absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-60 overflow-y-auto z-50 custom-scrollbar">
+        </div>
+      </div>
+
+      <!-- Header Controls -->
+      <div class="flex items-center space-x-2">
+        <button id="gpsBtn" title="내 위치로 이동" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center space-x-1">
+          <i class="fa-solid fa-location-crosshairs text-base text-blue-500"></i>
+          <span class="text-xs font-semibold hidden sm:inline">내 위치</span>
+        </button>
+        <button id="apiKeyModalBtn" title="Gemini API 키 설정" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-key text-amber-500"></i>
+          <span class="text-xs font-semibold hidden sm:inline">API 키</span>
+        </button>
+        <button id="themeToggle" title="다크/라이트 테마 변경" class="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition">
+          <i class="fa-solid fa-moon text-base dark:hidden"></i>
+          <i class="fa-solid fa-sun text-base hidden dark:block"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Search Bar -->
+    <div class="mt-2 md:hidden relative z-40">
+      <div class="relative">
+        <input type="text" id="searchInputMobile" placeholder="전 세계 모든 도시 검색 (예: 서울, 수원, 부산, 도쿄...)" 
+          autocomplete="off"
+          class="w-full pl-9 pr-20 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+        <button id="searchBtnMobile" class="absolute right-1.5 top-1 px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white flex items-center gap-1">
+          <span id="searchBtnMobileText">검색</span>
+        </button>
+      </div>
+      <div id="searchSuggestionsMobile" class="hidden absolute left-0 right-0 top-full mt-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl max-h-56 overflow-y-auto z-50 custom-scrollbar">
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Application Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-5">
+    
+    <!-- LEFT PANEL: Interactive Map & Preset Chips -->
+    <section class="lg:col-span-6 flex flex-col gap-4">
+      
+      <!-- Map Container Card -->
+      <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col h-[480px] lg:h-[620px] relative">
+        
+        <!-- Map Overlay Controls -->
+        <div class="p-3 bg-slate-50/90 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs font-medium z-10">
+          <span class="flex items-center text-slate-700 dark:text-slate-200 font-semibold">
+            <i class="fa-solid fa-map-location-dot text-blue-500 mr-2 text-sm"></i>
+            지도를 클릭하거나 도시를 검색하면 실시간 날씨와 추천 코디가 업데이트됩니다
+          </span>
+          <div class="flex items-center space-x-2">
+            <select id="mapTileSelect" onchange="changeMapTile(this.value)" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="esriStreet">🗺️ Esri 스트리트 (추천)</option>
+              <option value="esriTopo">⛰️ Esri 지형도</option>
+              <option value="esriDark">🌙 Esri 다크 모드</option>
+              <option value="cartoVoyager">🎨 Carto Voyager</option>
+              <option value="osm">🌐 OSM 표준</option>
+            </select>
+            <span id="currentCoordsBadge" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-mono">
+              수원시 (37.26, 127.03)
+            </span>
+          </div>
+        </div>
+
+        <!-- Leaflet Map Canvas -->
+        <div id="map" class="w-full flex-1"></div>
+
+        <!-- Preset City Chips -->
+        <div class="p-2.5 bg-white/95 dark:bg-slate-800/95 border-t border-slate-200 dark:border-slate-700 flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+          <span class="text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap mr-1 font-semibold"><i class="fa-solid fa-fire text-amber-500"></i> 주요 도시:</span>
+          <button onclick="selectCity('수원시', 37.2636, 127.0286)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-900/40 text-blue-600 dark:text-blue-300 hover:bg-blue-100 transition whitespace-nowrap">📍 수원</button>
+          <button onclick="selectCity('서울특별시', 37.5665, 126.9780)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🏢 서울</button>
+          <button onclick="selectCity('부산광역시', 35.1796, 129.0756)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🌊 부산</button>
+          <button onclick="selectCity('제주도', 33.4996, 126.5312)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🍊 제주</button>
+          <button onclick="selectCity('강릉시', 37.7519, 128.8760)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🌲 강릉</button>
+          <button onclick="selectCity('도쿄', 35.6762, 139.6503)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🗼 도쿄</button>
+          <button onclick="selectCity('파리', 48.8566, 2.3522)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🥐 파리</button>
+          <button onclick="selectCity('뉴욕', 40.7128, -74.0060)" class="city-chip px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 hover:bg-blue-50 text-slate-700 dark:text-slate-200 transition whitespace-nowrap">🗽 뉴욕</button>
+        </div>
+
+      </div>
+
+      <!-- Current Weather Display Box -->
+      <div class="bg-gradient-to-br from-blue-600 via-indigo-600 to-indigo-800 dark:from-slate-800 dark:to-slate-900 text-white rounded-2xl p-5 shadow-lg relative overflow-hidden">
+        <div class="absolute -right-6 -bottom-6 w-36 h-36 rounded-full bg-white/10 blur-xl pointer-events-none"></div>
+        <div class="absolute right-4 top-4 text-white/10 text-8xl font-black pointer-events-none">
+          <i id="bgWeatherIcon" class="fa-solid fa-sun"></i>
+        </div>
+
+        <div class="relative z-10 flex flex-col justify-between h-full space-y-4">
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur text-xs font-semibold mb-2">
+                <i class="fa-solid fa-location-dot text-amber-300"></i>
+                <span id="locationName">수원시</span>
+                <span id="localTimeBadge" class="ml-1 pl-1.5 border-l border-white/30 text-amber-200 text-[11px] font-mono">--:--</span>
+              </div>
+              <h2 id="weatherConditionText" class="text-2xl font-extrabold tracking-tight">맑음 ☀️</h2>
+            </div>
+            <div id="weatherMainIcon" class="text-5xl text-yellow-300 drop-shadow-md">
+              <i class="fa-solid fa-sun"></i>
+            </div>
+          </div>
+
+          <div class="my-2 flex items-baseline space-x-3">
+            <span id="tempValue" class="text-5xl font-black tracking-tighter">20°C</span>
+            <span id="feelsLikeValue" class="text-sm text-blue-100 font-semibold">체감 21°C</span>
+          </div>
+
+          <!-- Quick Status Badges -->
+          <div class="flex flex-wrap gap-1.5 py-1 text-[11px] font-semibold">
+            <span id="pm25Badge" class="px-2.5 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/40 text-emerald-100 flex items-center gap-1">
+              <i class="fa-solid fa-mask-face"></i> 초미세먼지 보통 (16)
+            </span>
+            <span id="runningBadge" class="px-2.5 py-0.5 rounded-full bg-amber-500/30 border border-amber-300/40 text-amber-100 flex items-center gap-1">
+              <i class="fa-solid fa-person-running"></i> 러닝 85점 (최적)
+            </span>
+            <span id="uvBadge" class="px-2.5 py-0.5 rounded-full bg-purple-500/30 border border-purple-300/40 text-purple-100 flex items-center gap-1">
+              <i class="fa-solid fa-sun"></i> 자외선 보통 (3)
+            </span>
+          </div>
+
+          <div class="grid grid-cols-4 gap-2 pt-3 border-t border-white/20 text-xs">
+            <div class="bg-white/10 backdrop-blur rounded-xl p-2 text-center">
+              <span class="block text-white/70 text-[10px] mb-0.5"><i class="fa-solid fa-droplet text-blue-200"></i> 습도</span>
+              <strong id="humidityValue" class="text-xs font-bold">50%</strong>
+            </div>
+            <div class="bg-white/10 backdrop-blur rounded-xl p-2 text-center">
+              <span class="block text-white/70 text-[10px] mb-0.5"><i class="fa-solid fa-wind text-teal-200"></i> 풍속</span>
+              <strong id="windValue" class="text-xs font-bold">2.8 m/s</strong>
+            </div>
+            <div class="bg-white/10 backdrop-blur rounded-xl p-2 text-center">
+              <span class="block text-white/70 text-[10px] mb-0.5"><i class="fa-solid fa-umbrella text-purple-200"></i> 강수확률</span>
+              <strong id="rainProbValue" class="text-xs font-bold">10%</strong>
+            </div>
+            <div class="bg-white/10 backdrop-blur rounded-xl p-2 text-center">
+              <span class="block text-white/70 text-[10px] mb-0.5"><i class="fa-solid fa-clock text-yellow-200"></i> 시간대</span>
+              <strong id="dayNightValue" class="text-xs font-bold">주간 ☀️</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Detailed Weather & Life Activity Indices Card -->
+      <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm space-y-4">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+          <h3 class="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center">
+            <i class="fa-solid fa-heart-pulse text-rose-500 mr-2"></i> 실시간 대기질 & 생활·운동 기상 지수
+          </h3>
+          <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300 font-semibold">실시간 분석</span>
+        </div>
+
+        <!-- Air Quality Details Grid -->
+        <div class="grid grid-cols-2 gap-2.5">
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center">
+                <i class="fa-solid fa-smog text-amber-500 mr-1.5"></i> 미세먼지 (PM10)
+              </span>
+              <span id="pm10GradeBadge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">좋음</span>
+            </div>
+            <div class="flex items-baseline space-x-1">
+              <span id="pm10Value" class="text-xl font-bold text-slate-800 dark:text-slate-100">28</span>
+              <span class="text-[11px] text-slate-400">㎍/㎥</span>
+            </div>
+            <p id="pm10Advice" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">야외 활동하기 깨끗한 상태</p>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center">
+                <i class="fa-solid fa-dust text-blue-500 mr-1.5"></i> 초미세먼지 (PM2.5)
+              </span>
+              <span id="pm25GradeBadge" class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">보통</span>
+            </div>
+            <div class="flex items-baseline space-x-1">
+              <span id="pm25Value" class="text-xl font-bold text-slate-800 dark:text-slate-100">16</span>
+              <span class="text-[11px] text-slate-400">㎍/㎥</span>
+            </div>
+            <p id="pm25Advice" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 truncate">환기 및 야외 활동 적합</p>
+          </div>
+        </div>
+
+        <!-- Life & Activity Indices Cards Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div class="p-2.5 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 text-center space-y-1">
+            <div class="text-emerald-600 dark:text-emerald-400 text-base"><i class="fa-solid fa-person-running"></i></div>
+            <span class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">달리기·운동</span>
+            <span id="runningScoreText" class="block text-sm font-black text-emerald-600 dark:text-emerald-400">85점 (최상)</span>
+            <p id="runningDesc" class="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">야외 러닝에 딱 좋은 날씨!</p>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/50 text-center space-y-1">
+            <div class="text-purple-600 dark:text-purple-400 text-base"><i class="fa-solid fa-sun"></i></div>
+            <span class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">자외선 지수</span>
+            <span id="uvIndexText" class="block text-sm font-black text-purple-600 dark:text-purple-400">3 (보통)</span>
+            <p id="uvDesc" class="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">자외선 차단제 차림 추천</p>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800/50 text-center space-y-1">
+            <div class="text-sky-600 dark:text-sky-400 text-base"><i class="fa-solid fa-shirt"></i></div>
+            <span class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">빨래 지수</span>
+            <span id="laundryIndexText" class="block text-sm font-black text-sky-600 dark:text-sky-400">90% (쾌속)</span>
+            <p id="laundryDesc" class="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">건조 속도가 매우 빠릅니다</p>
+          </div>
+
+          <div class="p-2.5 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50 text-center space-y-1">
+            <div class="text-indigo-600 dark:text-indigo-400 text-base"><i class="fa-solid fa-car"></i></div>
+            <span class="block text-[11px] font-bold text-slate-600 dark:text-slate-300">세차 지수</span>
+            <span id="carWashIndexText" class="block text-sm font-black text-indigo-600 dark:text-indigo-400">80점 (추천)</span>
+            <p id="carWashDesc" class="text-[10px] text-slate-500 dark:text-slate-400 leading-tight truncate">당분간 비 예보가 없습니다</p>
+          </div>
+        </div>
+
+        <!-- Discomfort Index Progress Bar -->
+        <div class="pt-2 border-t border-slate-100 dark:border-slate-700/60">
+          <div class="flex items-center justify-between text-xs mb-1">
+            <span class="font-semibold text-slate-600 dark:text-slate-300 flex items-center">
+              <i class="fa-solid fa-face-smile text-amber-500 mr-1.5"></i> 체감 불쾌지수
+            </span>
+            <span id="discomfortText" class="font-bold text-slate-700 dark:text-slate-200">68 (쾌적함)</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+            <div id="discomfortBar" class="h-full bg-gradient-to-r from-emerald-500 via-amber-400 to-rose-500 transition-all duration-500" style="width: 45%;"></div>
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- RIGHT PANEL: Photo Lookbook & Outfit Recommendation -->
+    <section class="lg:col-span-6 flex flex-col gap-4">
+      
+      <!-- Outfit Config & Photo Gallery Card -->
+      <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 shadow-sm space-y-4">
+        
+        <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+          <h3 class="font-bold text-base flex items-center text-slate-800 dark:text-slate-100">
+            <i class="fa-solid fa-camera-retro text-indigo-500 mr-2"></i> 실시간 기온 & 무드 맞춤 착장 화보
+          </h3>
+          <span id="aiEngineBadge" class="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 font-semibold">무드 & 체온 연동</span>
+        </div>
+
+        <!-- Custom User Options (2-Column Options: Mood & Sensitivity) -->
+        <div class="grid grid-cols-2 gap-3">
+          <!-- Style Mood Selector -->
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">패션 무드</label>
+            <select id="styleMoodSelect" onchange="generateOutfitRecommendation()" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 font-semibold">
+              <option value="Minimal & Modern">미니멀 & 모던</option>
+              <option value="Trendy Street">트렌디 / 스트릿</option>
+              <option value="Classic Casual">클래식 캐주얼</option>
+              <option value="Sporty & Active">스포티 / 액티브</option>
+            </select>
+          </div>
+
+          <!-- Temperature Sensitivity -->
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">체온 민감도</label>
+            <select id="sensitivitySelect" onchange="generateOutfitRecommendation()" class="w-full text-xs p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 font-semibold">
+              <option value="Standard">보통 체질</option>
+              <option value="Cold Sensitive">추위 많이 팀 (+1단계 더 따뜻하게)</option>
+              <option value="Heat Sensitive">더위 많이 팀 (+1단계 더 얇게)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Photo Display Mode Tabs -->
+        <div class="flex items-center space-x-2 pt-1 border-t border-slate-100 dark:border-slate-700">
+          <button id="tabRealPhotosBtn" onclick="switchPhotoTab('real')" class="flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-blue-600 text-white shadow-sm">
+            <i class="fa-solid fa-images"></i>
+            <span>맞춤 모델 착장 룩북</span>
+          </button>
+          <button id="tabAiPhotosBtn" onclick="switchPhotoTab('ai')" class="flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200">
+            <i class="fa-solid fa-wand-magic-sparkles text-purple-500"></i>
+            <span>Gemini AI 화보 모드</span>
+          </button>
+        </div>
+
+        <!-- Real Model Photos Box -->
+        <div id="realPhotosBox" class="space-y-3">
+          <div class="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+            <span id="photoCategoryTitle"><i class="fa-solid fa-temperature-half text-blue-500 mr-1"></i> 20°C 무드 연동 착장 룩북</span>
+            <span class="text-[11px] text-slate-400">무드 & 체온 변경 시 실시간 반영</span>
+          </div>
+
+          <!-- Outfit Images Grid (Main 2 Photos) -->
+          <div class="grid grid-cols-2 gap-3">
+            <!-- Photo 1: Top & Outer Focus -->
+            <div class="relative group rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 aspect-[3/4] shadow-sm">
+              <img id="outfitPhoto1" src="https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=600&q=80" alt="추천 상의 착장" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+              <div class="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-blue-300 block">상의 / 아우터 Style</span>
+                <p id="photoLabel1" class="text-xs font-medium truncate">오버핏 모던 니트</p>
+              </div>
+            </div>
+
+            <!-- Photo 2: Full Body & Bottom Focus -->
+            <div class="relative group rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 aspect-[3/4] shadow-sm">
+              <img id="outfitPhoto2" src="https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&w=600&q=80" alt="추천 전체 착장" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+              <div class="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 via-black/40 to-transparent text-white">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-indigo-300 block">전체 실루엣 / 하의</span>
+                <p id="photoLabel2" class="text-xs font-medium truncate">원턱 테이퍼드 슬랙스</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Generated Photo Box -->
+        <div id="aiPhotosBox" class="hidden space-y-3">
+          <div class="p-3 bg-purple-50 dark:bg-purple-950/40 rounded-xl border border-purple-200 dark:border-purple-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="text-xs">
+              <span class="font-bold text-purple-700 dark:text-purple-300 block flex items-center">
+                <i class="fa-solid fa-sparkles mr-1.5 text-purple-500"></i> Gemini AI 맞춤 화보 생성기
+              </span>
+              <p class="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5">선택한 도시, 실시간 날씨, 패션 무드 및 체온 민감도에 맞춘 고화질 화보를 연출합니다.</p>
+            </div>
+            <div class="flex items-center space-x-2 shrink-0">
+              <button onclick="generateAiLookbookImage()" class="shrink-0 px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold hover:shadow-md transition active:scale-95 flex items-center gap-1.5">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>✨ 화보 생성하기</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-700 aspect-[4/3] flex items-center justify-center text-center p-4 shadow-inner">
+            <div id="aiImageSpinner" class="hidden space-y-2 text-purple-300 z-10">
+              <i class="fa-solid fa-circle-notch fa-spin text-3xl"></i>
+              <p id="aiSpinnerText" class="text-xs font-semibold text-slate-200">Gemini AI가 실시간 날씨와 무드/체온에 맞는 고화질 화보를 생성 중입니다...</p>
+            </div>
+            <img id="aiLookbookImage" src="" alt="AI generated fashion lookbook" class="hidden w-full h-full object-cover">
+            <div id="aiImageBadge" class="hidden absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md text-white text-[11px] font-bold z-10 flex items-center space-x-1 shadow-md">
+            </div>
+            <div id="aiImagePlaceholder" class="text-slate-400 space-y-2">
+              <i class="fa-solid fa-shirt text-4xl text-purple-400 block mb-1"></i>
+              <p class="text-xs">상단의 <strong>'✨ 화보 생성하기'</strong> 버튼을 누르면<br>선택한 날씨와 패션 무드가 조합된 고화질 패션 화보가 연출됩니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Text Outfit Recommendation -->
+        <div id="outfitResultBox" class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-xs leading-relaxed space-y-2">
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Toast Notification System -->
+  <div id="toastNotification" class="fixed bottom-5 right-5 z-50 transform translate-y-10 opacity-0 transition-all duration-300 hidden">
+    <div class="bg-slate-800 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 flex items-center space-x-3 max-w-sm">
+      <span id="toastIcon"><i class="fa-solid fa-circle-info text-blue-400 text-lg"></i></span>
+      <p id="toastText" class="text-xs font-medium leading-snug">알림 메시지</p>
+    </div>
+  </div>
+
+  <!-- API Key Modal -->
+  <div id="apiKeyModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5 max-w-md w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700">
+        <h3 class="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center">
+          <i class="fa-solid fa-key text-amber-500 mr-2"></i> Gemini API 키 설정
+        </h3>
+        <button id="closeModalBtn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+        Gemini API 키를 등록하면 AI가 실시간 날씨와 무드를 다각도로 분석하여 심도 있는 맞춤 패션 컨설팅 및 화보 생성을 제공합니다. (미입력 시에도 스마트 코디 엔진이 정상 작동합니다)
+      </p>
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">Gemini API Key</label>
+        <input type="password" id="customApiKeyInput" placeholder="AIzaSy..." 
+          class="w-full p-2.5 text-xs rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div class="flex justify-end space-x-2 pt-2">
+        <button id="saveApiKeyBtn" class="px-4 py-2 bg-blue-600 text-white font-bold text-xs rounded-xl hover:bg-blue-700 transition">
+          저장하기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="mt-auto py-4 text-center text-xs text-slate-500 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 backdrop-blur">
+    <p>© WeatherFit AI • Open-Meteo Weather API & Gemini Mood/Sensitivity Engine</p>
+  </footer>
+
+  <script>
+    // Application State Object
+    const state = {
+      lat: 37.2636,
+      lng: 127.0286,
+      cityName: '수원시',
+      userApiKey: localStorage.getItem('weatherfit_gemini_key') || '',
+      weather: {
+        temp: 20,
+        feelsLike: 21,
+        condition: '맑음 ☀️',
+        weatherCode: 0,
+        humidity: 50,
+        windSpeed: 2.8,
+        rainProb: 10,
+        isDay: true,
+        timezone: 'Asia/Seoul',
+        localTimeStr: '',
+        pm10: 28,
+        pm25: 16,
+        usAqi: 35,
+        uvIndex: 3,
+        runningScore: 85,
+        laundryScore: 90,
+        carWashScore: 80,
+        discomfortVal: 68
+      },
+      map: null,
+      marker: null,
+      currentTileLayer: null,
+      photoTab: 'real'
+    };
+
+    // Built-in Quick Preset City Database
+    const CITY_DATABASE = [
+      { name: "수원시", fullName: "경기도 수원시", lat: 37.2636, lng: 127.0286 },
+      { name: "서울특별시", fullName: "서울특별시", lat: 37.5665, lng: 126.9780 },
+      { name: "부산광역시", fullName: "부산광역시", lat: 35.1796, lng: 129.0756 },
+      { name: "인천광역시", fullName: "인천광역시", lat: 37.4563, lng: 126.7052 },
+      { name: "대구광역시", fullName: "대구광역시", lat: 35.8714, lng: 128.6014 },
+      { name: "대전광역시", fullName: "대전광역시", lat: 36.3510, lng: 127.3850 },
+      { name: "광주광역시", fullName: "광주광역시", lat: 35.1595, lng: 126.8526 },
+      { name: "울산광역시", fullName: "울산광역시", lat: 35.5384, lng: 129.3114 },
+      { name: "세종특별자치시", fullName: "세종특별자치시", lat: 36.4800, lng: 127.2890 },
+      { name: "제주도", fullName: "제주특별자치도", lat: 33.4996, lng: 126.5312 },
+      { name: "강릉시", fullName: "강원도 강릉시", lat: 37.7519, lng: 128.8760 },
+      { name: "속초시", fullName: "강원도 속초시", lat: 38.2070, lng: 128.5918 },
+      { name: "춘천시", fullName: "강원도 춘천시", lat: 37.8813, lng: 127.7298 },
+      { name: "전주시", fullName: "전라북도 전주시", lat: 35.8242, lng: 127.1480 },
+      { name: "여수시", fullName: "전라남도 여수시", lat: 34.7604, lng: 127.6622 },
+      { name: "경주시", fullName: "경상북도 경주시", lat: 35.8562, lng: 129.2247 },
+      { name: "창원시", fullName: "경상남도 창원시", lat: 35.2280, lng: 128.6811 },
+      { name: "성남시", fullName: "경기도 성남시 (분당)", lat: 37.4200, lng: 127.1265 },
+      { name: "용인시", fullName: "경기도 용인시", lat: 37.2410, lng: 127.1775 },
+      { name: "고양시", fullName: "경기도 고양시 (일산)", lat: 37.6584, lng: 126.8320 },
+      { name: "도쿄", fullName: "일본 도쿄 (Tokyo)", lat: 35.6762, lng: 139.6503 },
+      { name: "오사카", fullName: "일본 오사카 (Osaka)", lat: 34.6937, lng: 135.5023 },
+      { name: "후쿠오카", fullName: "일본 후쿠오카 (Fukuoka)", lat: 33.5904, lng: 130.4017 },
+      { name: "베이징", fullName: "중국 베이징 (Beijing)", lat: 39.9042, lng: 116.4074 },
+      { name: "상하이", fullName: "중국 상하이 (Shanghai)", lat: 31.2304, lng: 121.4737 },
+      { name: "홍콩", fullName: "홍콩 (Hong Kong)", lat: 22.3193, lng: 114.1694 },
+      { name: "타이베이", fullName: "대만 타이베이 (Taipei)", lat: 25.0330, lng: 121.5654 },
+      { name: "방콕", fullName: "태국 방콕 (Bangkok)", lat: 13.7563, lng: 100.5018 },
+      { name: "런던", fullName: "영국 런던 (London)", lat: 51.5074, lng: -0.1278 },
+      { name: "파리", fullName: "프랑스 파리 (Paris)", lat: 48.8566, lng: 2.3522 },
+      { name: "로마", fullName: "이탈리아 로마 (Rome)", lat: 41.9028, lng: 12.4964 },
+      { name: "뉴욕", fullName: "미국 뉴욕 (New York)", lat: 40.7128, lng: -74.0060 },
+      { name: "로스앤젤레스", fullName: "미국 LA (Los Angeles)", lat: 34.0522, lng: -118.2437 },
+      { name: "시드니", fullName: "호주 시드니 (Sydney)", lat: -33.8688, lng: 151.2093 }
+    ];
+
+    function showToast(message, type = 'info') {
+      const toast = document.getElementById('toastNotification');
+      const toastText = document.getElementById('toastText');
+      const toastIcon = document.getElementById('toastIcon');
+      if (!toast) return;
+
+      toastText.innerText = message;
+      if (type === 'error') {
+        toastIcon.innerHTML = '<i class="fa-solid fa-circle-exclamation text-rose-500 text-lg"></i>';
+      } else if (type === 'success') {
+        toastIcon.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-500 text-lg"></i>';
+      } else {
+        toastIcon.innerHTML = '<i class="fa-solid fa-circle-info text-blue-400 text-lg"></i>';
+      }
+
+      toast.classList.remove('hidden', 'translate-y-10', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+
+      setTimeout(() => {
+        toast.classList.add('translate-y-10', 'opacity-0');
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, 3200);
+    }
+
+    const TILE_SERVERS = {
+      esriStreet: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        attr: 'Tiles &copy; Esri &mdash; Source: Esri, DeLorme, NAVTEQ, USGS'
+      },
+      esriTopo: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+        attr: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ, TomTom'
+      },
+      esriDark: {
+        url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        attr: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ'
+      },
+      cartoVoyager: {
+        url: 'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+        attr: '&copy; CARTO &copy; OpenStreetMap contributors'
+      },
+      osm: {
+        url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        attr: '&copy; OpenStreetMap contributors'
+      }
+    };
+
+    // Fashion Mood Database categorized by Temperature Levels
+    const MOOD_FASHION_DATABASE = {
+      "Minimal & Modern": {
+        hot: { // 28°C+
+          photo1: "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80",
+          topLabel: "화이트 쿨링 티셔츠 & 오픈 카라",
+          bottomLabel: "모던 스트레이트 테일러드 쇼츠",
+          tops: "프리미엄 쿨링 무지 반팔티 / 리넨 오픈카라 셔츠",
+          bottoms: "모던 미니멀 크롭트 쇼츠 또는 슬림 면슬랙스",
+          acc: "최소한의 메탈 워치, 실버 링, 가벼운 레더 슬라이드",
+          tip: "단색 계열(Monochrome)의 절제된 실루엣으로 쾌적하면서도 세련된 인상을 연출하세요."
+        },
+        warm: { // 23°C~27°C
+          photo1: "https://images.unsplash.com/photo-1617137984095-74e4e5e3613f?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1552374196-1ab2a1c593e8?auto=format&fit=crop&w=600&q=80",
+          topLabel: "오버핏 모던 니트 반팔",
+          bottomLabel: "원턱 슬랙스 & 더비 슈즈",
+          tops: "세미오버 모던 피케 티셔츠 / 소프트 섬머 가디건",
+          bottoms: "테이퍼드 원턱 쿨슬랙스 / 드롭핏 치노 팬츠",
+          acc: "미니멀 레더 토트백, 모던 스니커즈",
+          tip: "모카, 크림, 차콜 톤온톤 매치로 클래시한 미니멀리즘을 표현하세요."
+        },
+        mild: { // 17°C~22°C
+          photo1: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=600&q=80",
+          topLabel: "클래식 싱글 미니멀 블레이저",
+          bottomLabel: "세미와이드 수트 팬츠",
+          tops: "싱글 2버튼 미니멀 블레이저 + 라운드 수피마 티",
+          bottoms: "드롭핏 모던 슬랙스",
+          acc: "가죽 브리프케이스, 가죽 로퍼",
+          tip: "단정하게 떨어지는 스트레이트 라인으로 지적인 모던 감성을 배가합니다."
+        },
+        cool: { // 9°C~16°C
+          photo1: "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=600&q=80",
+          topLabel: "모던 맥코트 / 하프 코트",
+          bottomLabel: "울 가공 슬랙스 & 부츠",
+          tops: "울 블렌드 맥코트 + 하이넥 파인 니트",
+          bottoms: "차콜 테이퍼드 모던 울 팬츠",
+          acc: "울 머플러, 블랙 첼시부츠",
+          tip: "모노톤 베이스에 슬림한 하이넥 니트로 도시적인 간절기 핏을 연출하세요."
+        },
+        freezing: { // 8°C 이하
+          photo1: "https://images.unsplash.com/photo-1516762689617-e1cffffd478d?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1548883354-7622d03aca27?auto=format&fit=crop&w=600&q=80",
+          topLabel: "발마칸 울 롱코트 & 캐시미어",
+          bottomLabel: "기모 헤링본 슬랙스",
+          tops: "발마칸 울 롱코트 / 구스다운 미니멀 숏패딩 + 캐시미어 터틀넥",
+          bottoms: "울 트위드 헤링본 슬랙스",
+          acc: "울 머플러, 가죽 장갑, 가죽 부츠",
+          tip: "과하지 않은 깔끔한 3단 레이어드로 겨울철에도 날렵한 실루엣을 유지하세요."
+        }
+      },
+      "Trendy Street": {
+        hot: {
+          photo1: "https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=600&q=80",
+          topLabel: "오버사이즈 그래픽 반팔",
+          bottomLabel: "와이드 버뮤다 카고 쇼츠",
+          tops: "빈티지 피그먼트 그래픽 오버핏 반팔",
+          bottoms: "나일론 버뮤다 와이드 카고 쇼츠",
+          acc: "스트릿 볼캡, 실버 체인 목걸이, 볼드 스니커즈",
+          tip: "트렌디한 카고 디테일과 오버핏 실루엣으로 힙한 분위기를 완성하세요."
+        },
+        warm: {
+          photo1: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=600&q=80",
+          topLabel: "레이어드 스트릿 후드 집업",
+          bottomLabel: "와이드 파라슈트 팬츠",
+          tops: "투웨이 크롭 후드집업 + 오버사이즈 레이어드 티",
+          bottoms: "파라슈트 와이드 조거 팬츠",
+          acc: "크로스 메신저백, 레트로 어반 러닝화",
+          tip: "투웨이 지퍼 조절과 오버핏 레이어드로 스트릿 감성을 살려보세요."
+        },
+        mild: {
+          photo1: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1509631179647-0177331693ae?auto=format&fit=crop&w=600&q=80",
+          topLabel: "비건 레더 라이더 / 바시티 재킷",
+          bottomLabel: "와이드 흑청 워싱 데님",
+          tops: "오버핏 바시티 재킷 / 비건 레더 블루종 + 오버 후디",
+          bottoms: "빈티지 와이드 카고 데님 팬츠",
+          acc: "비니 / 캠프캡, 덩크/포스 하이 스니커즈",
+          tip: "바시티 재킷과 디스트로이드 데님 조합으로 볼륨감 있는 스트릿 착장 완성."
+        },
+        cool: {
+          photo1: "https://images.unsplash.com/photo-1520975954732-35dd22299614?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1551028719-00167b16eac5?auto=format&fit=crop&w=600&q=80",
+          topLabel: "볼륨 오버핏 숏 패딩",
+          bottomLabel: "벌룬 핏 스웨트 팬츠",
+          tops: "볼륨감 있는 덕다운 숏패딩 + 빈티지 스웨트셔츠",
+          bottoms: "헤비웨이트 와이드 벌룬 팬츠",
+          acc: "니트 비니, 스트릿 백팩, 워커/볼드 슈즈",
+          tip: "상체 볼륨을 극대화한 숏패딩과 벌룬 팬츠로 매력적인 아웃핏을 만드세요."
+        },
+        freezing: {
+          photo1: "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1520975954732-35dd22299614?auto=format&fit=crop&w=600&q=80",
+          topLabel: "헤비 구스 몬스터 파카",
+          bottomLabel: "기모 파라슈트 와이드 팬츠",
+          tops: "몬스터 헤비 구스다운 파카 + 프렌치테리 후디",
+          bottoms: "기모 와이드 카고 스웨트 팬츠",
+          acc: "보온 귀도리 캡, 방한 글로브, 어그/트레킹 부츠",
+          tip: "헤비 파카와 스웨트 셋업 레이어드로 방한성과 고프코어 스타일을 동시에 잡으세요."
+        }
+      },
+      "Classic Casual": {
+        hot: {
+          photo1: "https://images.unsplash.com/photo-1598033129183-c4f50c736f10?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=600&q=80",
+          topLabel: "클래식 린넨 리조트 셔츠",
+          bottomLabel: "테일러드 하프 팬츠",
+          tops: "프렌치 린넨 스트라이프 셔츠 (소매 롤업)",
+          bottoms: "코튼 치노 반바지 / 원턱 버뮤다 팬츠",
+          acc: "가죽 벨트, 수제 로퍼 / 보트슈즈",
+          tip: "셔츠 소매를 가볍게 롤업하여 한결 정갈하고 여유 있는 클래식룩을 표현하세요."
+        },
+        warm: {
+          photo1: "https://images.unsplash.com/photo-1479064555552-3ef4979f8908?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80",
+          topLabel: "옥스포드 셔츠 & 얇은 니트 스웨터",
+          bottomLabel: "레귤러핏 프렌치 치노 팬츠",
+          tops: "버튼다운 옥스포드 셔츠 + 어깨 어깨 드레이프 니트",
+          bottoms: "클래식 레귤러핏 치노 팬츠 / 스트레이트 중청 데님",
+          acc: "클래식 가죽 시계, 페니 로퍼",
+          tip: "아이비리그 옥스포드 셔츠와 가볍게 어깨에 두른 니트로 단정한 센스를 발휘하세요."
+        },
+        mild: {
+          photo1: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=600&q=80",
+          topLabel: "트렌치 코트 / 하링턴 재킷",
+          bottomLabel: "스트레이트 핏 데님 & 더비",
+          tops: "클래식 싱글 트렌치코트 / 하링턴 타탄 체크 재킷",
+          bottoms: "인디고 원워싱 테이퍼드 데님 팬츠",
+          acc: "가죽 브리프케이스 / 토트백, 수제 더비 슈즈",
+          tip: "트렌치코트의 깃을 살짝 세우고 정갈한 데님을 매치하여 남성적인 분위기를 선사하세요."
+        },
+        cool: {
+          photo1: "https://images.unsplash.com/photo-1544441893-675973e31985?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&w=600&q=80",
+          topLabel: "더플 코트 / 피코트 & 케이블 니트",
+          bottomLabel: "울 트윌 팬츠 & 로퍼",
+          tops: "울 더플 코트 / 멜톤 피코트 + 굵은 케이블 짜임 스웨터",
+          bottoms: "다크 그레이 울 트윌 팬츠",
+          acc: "체크 울 머플러, 드레스 로퍼",
+          tip: "케이블 니트의 포근한 질감과 피코트의 단단함이 만난 클래식 윈터 코디."
+        },
+        freezing: {
+          photo1: "https://images.unsplash.com/photo-1516762689617-e1cffffd478d?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1548883354-7622d03aca27?auto=format&fit=crop&w=600&q=80",
+          topLabel: "체크 롱 앤 울 코트 & 경량패딩",
+          bottomLabel: "기모 코듀로이 치노 팬츠",
+          tops: "울 90% 하운즈투스 체크 코트 + V넥 경량 패딩 조끼 + 셔츠",
+          bottoms: "포근한 코듀로이(골덴) 클래식 팬츠",
+          acc: "캐시미어 머플러, 레더 드레스 장갑, 첼시 부츠",
+          tip: "3단 포멀 레이어링(셔츠-경량조끼-울코트)으로 격식과 보온을 완벽 반영."
+        }
+      },
+      "Sporty & Active": {
+        hot: {
+          photo1: "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=600&q=80",
+          topLabel: "흡습속건 액티브 민소매/반팔",
+          bottomLabel: "경량 러닝 숏 팬츠",
+          tops: "쿨맥스 흡습속건 아슬레틱 기능성 반팔",
+          bottoms: "3인치/5인치 경량 사이드 트임 러닝 숏츠",
+          acc: "스포츠 러닝 바이저, 러닝 베스트, 쿠션 스프린트화",
+          tip: "열기를 빠르게 배출하는 초경량 러닝웨어 구성으로 최상의 야외 활동성을 확보하세요."
+        },
+        warm: {
+          photo1: "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=80",
+          topLabel: "바람막이 아노락 / 트레이닝 자켓",
+          bottomLabel: "스트레치 액티브 테이퍼드 조거",
+          tops: "경량 하프 집업 아노락 윈드브레이커",
+          bottoms: "4WAY 스트레치 아슬레틱 조거 팬츠",
+          acc: "스포츠 러닝 캡, 스마트워치, 카본 플레이트 러닝화",
+          tip: "아노락 하프 집업으로 상황에 따라 체온 유지를 간편히 통제하세요."
+        },
+        mild: {
+          photo1: "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=600&q=80",
+          topLabel: "기능성 트랙 집업 & 스웨트셔츠",
+          bottomLabel: "테크 테이퍼드 훈련용 팬츠",
+          tops: "고기능성 풀집 트랙 재킷 + 컴프레셔 언더웨어",
+          bottoms: "테크 플리스 스포츠 조거 팬츠",
+          acc: "헤드밴드 / 스포츠 장갑, 트레일 러닝화",
+          tip: "땀 흡수와 방풍을 고려한 레벨별 스포츠 트랙탑 매치."
+        },
+        cool: {
+          photo1: "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=80",
+          topLabel: "패딩 베스트 & 본딩 바람막이",
+          bottomLabel: "기모 아슬레틱 라이딩 조거",
+          tops: "경량 프리마로프트 패딩 조끼 + 헤비 트레이닝 자켓",
+          bottoms: "방풍 방수 테크니컬 조거 팬츠",
+          acc: "러닝 보온 넥워머, 방한 핑거리스 장갑, 고쿠션 트레이닝화",
+          tip: "체온 저하가 큰 바람부는 날씨에 베스트 레이어드로 보온성을 충실히 챙기세요."
+        },
+        freezing: {
+          photo1: "https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&fit=crop&w=600&q=80",
+          photo2: "https://images.unsplash.com/photo-1506152983158-b4a74a01c721?auto=format&fit=crop&w=600&q=80",
+          topLabel: "헤비 보온 윈터 파카 & 기모 언더레이어",
+          bottomLabel: "3레이어 기모 방풍 팬츠",
+          tops: "고기능성 액티브 다운 파카 + 방한 웜 베이스레이어",
+          bottoms: "기모 3레이어 방풍 조거 팬츠",
+          acc: "방한 비니, 방수 고어텍스 장갑, 방한 트레킹 슈즈",
+          tip: "겨울철 야외 액티비티 시 땀 증발과 바람 차단을 동시에 고려한 액티브 방한 구성."
+        }
+      }
+    };
+
+    // Initialize Leaflet Interactive Map
+    function initMap() {
+      state.map = L.map('map', {
+        center: [state.lat, state.lng],
+        zoom: 12,
+        zoomControl: true
+      });
+
+      // Default Tile Layer: Esri Street Map
+      state.currentTileLayer = L.tileLayer(TILE_SERVERS.esriStreet.url, {
+        attribution: TILE_SERVERS.esriStreet.attr,
+        maxZoom: 18
+      }).addTo(state.map);
+
+      // Custom Pin Marker
+      const customIcon = L.divIcon({
+        className: 'custom-map-marker',
+        html: `<div class="w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-sm animate-bounce">
+                 <i class="fa-solid fa-location-dot"></i>
+               </div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 32]
+      });
+
+      state.marker = L.marker([state.lat, state.lng], { icon: customIcon }).addTo(state.map);
+      state.marker.bindPopup(`<b>${state.cityName}</b><br>날씨 정보를 불러오는 중...`).openPopup();
+
+      // Map Click Event Listener
+      state.map.on('click', async function(e) {
+        const clickLat = e.latlng.lat;
+        const clickLng = e.latlng.lng;
+        
+        // Reverse Geocoding to get City Name
+        const fetchedName = await reverseGeocode(clickLat, clickLng);
+        selectCity(fetchedName, clickLat, clickLng);
+      });
+    }
+
+    function changeMapTile(tileKey) {
+      if (!TILE_SERVERS[tileKey]) return;
+      if (state.currentTileLayer) {
+        state.map.removeLayer(state.currentTileLayer);
+      }
+      state.currentTileLayer = L.tileLayer(TILE_SERVERS[tileKey].url, {
+        attribution: TILE_SERVERS[tileKey].attr,
+        maxZoom: 18
+      }).addTo(state.map);
+    }
+
+    // Geocoding & Weather API Calls
+    async function reverseGeocode(lat, lng) {
+      try {
+        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/get?id=37.2636&language=ko`); // Fallback test
+        const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ko`);
+        if (geoRes.ok) {
+          const data = await geoRes.json();
+          const addr = data.address;
+          return addr.city || addr.county || addr.town || addr.province || addr.country || "선택 위치";
+        }
+      } catch (err) {
+        console.warn("Reverse geocode fallback", err);
+      }
+      return `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+    }
+
+    async function fetchWeatherData(lat, lng) {
+      try {
+        // Open-Meteo Weather API
+        const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,wind_speed_10m&daily=uv_index_max,precipitation_probability_max&timezone=auto`;
+        const weatherRes = await fetch(weatherUrl);
+        const weatherData = await weatherRes.json();
+
+        // Open-Meteo Air Quality API
+        const airUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lng}&current=pm10,pm2_5,us_aqi`;
+        let airData = null;
+        try {
+          const airRes = await fetch(airUrl);
+          airData = await airRes.json();
+        } catch (e) {
+          console.warn("Air quality API request failed", e);
+        }
+
+        if (weatherData && weatherData.current) {
+          const cur = weatherData.current;
+          const daily = weatherData.daily || {};
+
+          state.weather.temp = Math.round(cur.temperature_2m);
+          state.weather.feelsLike = Math.round(cur.apparent_temperature);
+          state.weather.humidity = cur.relative_humidity_2m || 50;
+          state.weather.windSpeed = (cur.wind_speed_10m || 2.0).toFixed(1);
+          state.weather.isDay = cur.is_day === 1;
+          state.weather.weatherCode = cur.weather_code || 0;
+          state.weather.timezone = weatherData.timezone || 'Asia/Seoul';
+          state.weather.rainProb = (daily.precipitation_probability_max && daily.precipitation_probability_max[0]) || 10;
+          state.weather.uvIndex = (daily.uv_index_max && daily.uv_index_max[0]) ? Math.round(daily.uv_index_max[0]) : 3;
+
+          // Parse Condition Text & Icon
+          const condInfo = parseWeatherCode(state.weather.weatherCode, state.weather.isDay);
+          state.weather.condition = condInfo.text;
+          state.weather.iconClass = condInfo.icon;
+
+          if (airData && airData.current) {
+            state.weather.pm10 = Math.round(airData.current.pm10 || 28);
+            state.weather.pm25 = Math.round(airData.current.pm2_5 || 16);
+            state.weather.usAqi = Math.round(airData.current.us_aqi || 35);
+          }
+
+          // Compute Derived Activity Indices
+          calculateIndices();
+
+          // Render Updates
+          updateWeatherUI();
+          generateOutfitRecommendation();
+        }
+      } catch (error) {
+        console.error("Failed to fetch weather data:", error);
+        showToast("실시간 날씨 정보를 가져오는 중 오류가 발생했습니다.", "error");
+      }
+    }
+
+    function calculateIndices() {
+      const temp = state.weather.temp;
+      const humidity = state.weather.humidity;
+      const wind = parseFloat(state.weather.windSpeed);
+      const rain = state.weather.rainProb;
+      const pm25 = state.weather.pm25;
+
+      // 1. Running Score (0~100)
+      let runScore = 90;
+      if (temp < 5 || temp > 28) runScore -= 20;
+      if (temp > 32 || temp < -5) runScore -= 30;
+      if (rain > 40) runScore -= 25;
+      if (pm25 > 35) runScore -= 20;
+      state.weather.runningScore = Math.max(10, Math.min(100, runScore));
+
+      // 2. Laundry Score
+      let laundry = 90;
+      if (humidity > 70) laundry -= 30;
+      if (rain > 30) laundry -= 40;
+      if (state.weather.weatherCode > 3) laundry -= 20;
+      state.weather.laundryScore = Math.max(10, Math.min(100, laundry));
+
+      // 3. Car Wash Score
+      let carWash = 85;
+      if (rain > 30) carWash -= 50;
+      if (pm25 > 50) carWash -= 30;
+      state.weather.carWashScore = Math.max(10, Math.min(100, carWash));
+
+      // 4. Discomfort Index DI = 0.81 * T + 0.01 * RH * (0.99 * T - 14.3) + 46.3
+      const di = 0.81 * temp + 0.01 * humidity * (0.99 * temp - 14.3) + 46.3;
+      state.weather.discomfortVal = Math.round(di);
+    }
+
+    function parseWeatherCode(code, isDay) {
+      if (code === 0) return { text: isDay ? "맑음 ☀️" : "맑은 밤 🌙", icon: isDay ? "fa-sun text-amber-400" : "fa-moon text-indigo-300" };
+      if (code >= 1 && code <= 3) return { text: "구름 조금 ⛅", icon: "fa-cloud-sun text-amber-300" };
+      if (code >= 45 && code <= 48) return { text: "안개 🌫️", icon: "fa-smog text-slate-300" };
+      if (code >= 51 && code <= 67) return { text: "비 🌧️", icon: "fa-cloud-showers-heavy text-blue-400" };
+      if (code >= 71 && code <= 77) return { text: "눈 ❄️", icon: "fa-snowflake text-sky-200" };
+      if (code >= 80 && code <= 82) return { text: "소나기 🌦️", icon: "fa-cloud-rain text-blue-300" };
+      if (code >= 95) return { text: "뇌우 ⚡", icon: "fa-bolt text-yellow-400" };
+      return { text: "맑음 ☀️", icon: "fa-sun text-amber-400" };
+    }
+
+    function updateWeatherUI() {
+      // Coords Badge
+      document.getElementById('currentCoordsBadge').innerText = `${state.cityName} (${state.lat.toFixed(2)}, ${state.lng.toFixed(2)})`;
+      document.getElementById('locationName').innerText = state.cityName;
+      document.getElementById('tempValue').innerText = `${state.weather.temp}°C`;
+      document.getElementById('feelsLikeValue').innerText = `체감 ${state.weather.feelsLike}°C`;
+      document.getElementById('humidityValue').innerText = `${state.weather.humidity}%`;
+      document.getElementById('windValue').innerText = `${state.weather.windSpeed} m/s`;
+      document.getElementById('rainProbValue').innerText = `${state.weather.rainProb}%`;
+      document.getElementById('dayNightValue').innerText = state.weather.isDay ? "주간 ☀️" : "야간 🌙";
+      document.getElementById('weatherConditionText').innerText = state.weather.condition;
+
+      // Weather Icon
+      const iconEl = document.getElementById('weatherMainIcon');
+      const bgIconEl = document.getElementById('bgWeatherIcon');
+      iconEl.className = `text-5xl drop-shadow-md fa-solid ${state.weather.iconClass}`;
+      bgIconEl.className = `fa-solid ${state.weather.iconClass}`;
+
+      // Local Time Update
+      try {
+        const options = { timeZone: state.weather.timezone, hour: '2-digit', minute: '2-digit', hour12: false };
+        const localTime = new Intl.DateTimeFormat([], options).format(new Date());
+        document.getElementById('localTimeBadge').innerText = `현지 ${localTime}`;
+      } catch (e) {
+        document.getElementById('localTimeBadge').innerText = `--:--`;
+      }
+
+      // Air Quality
+      document.getElementById('pm10Value').innerText = state.weather.pm10;
+      document.getElementById('pm25Value').innerText = state.weather.pm25;
+      
+      const pm25Badge = document.getElementById('pm25Badge');
+      if (state.weather.pm25 <= 15) {
+        pm25Badge.className = "px-2.5 py-0.5 rounded-full bg-emerald-500/30 border border-emerald-300/40 text-emerald-100 flex items-center gap-1";
+        pm25Badge.innerHTML = `<i class="fa-solid fa-mask-face"></i> 초미세먼지 좋음 (${state.weather.pm25})`;
+      } else if (state.weather.pm25 <= 35) {
+        pm25Badge.className = "px-2.5 py-0.5 rounded-full bg-blue-500/30 border border-blue-300/40 text-blue-100 flex items-center gap-1";
+        pm25Badge.innerHTML = `<i class="fa-solid fa-mask-face"></i> 초미세먼지 보통 (${state.weather.pm25})`;
+      } else {
+        pm25Badge.className = "px-2.5 py-0.5 rounded-full bg-rose-500/30 border border-rose-300/40 text-rose-100 flex items-center gap-1";
+        pm25Badge.innerHTML = `<i class="fa-solid fa-mask-face"></i> 초미세먼지 나쁨 (${state.weather.pm25})`;
+      }
+
+      // Indices UI
+      document.getElementById('runningScoreText').innerText = `${state.weather.runningScore}점 (${state.weather.runningScore >= 80 ? '최상' : '보통'})`;
+      document.getElementById('uvIndexText').innerText = `${state.weather.uvIndex} (${state.weather.uvIndex >= 6 ? '높음' : '보통'})`;
+      document.getElementById('laundryIndexText').innerText = `${state.weather.laundryScore}% (${state.weather.laundryScore >= 70 ? '쾌속' : '지연'})`;
+      document.getElementById('carWashIndexText').innerText = `${state.weather.carWashScore}점 (${state.weather.carWashScore >= 75 ? '추천' : '비추'})`;
+
+      // Discomfort Bar
+      const di = state.weather.discomfortVal;
+      let diText = `${di} (쾌적함)`;
+      if (di >= 80) diText = `${di} (매우 불쾌 😡)`;
+      else if (di >= 75) diText = `${di} (높음 😟)`;
+      else if (di >= 68) diText = `${di} (보통 🙂)`;
+      document.getElementById('discomfortText').innerText = diText;
+      document.getElementById('discomfortBar').style.width = `${Math.min(100, Math.max(10, di))}%`;
+
+      // Update Map Marker & Popup
+      if (state.marker) {
+        state.marker.setLatLng([state.lat, state.lng]);
+        state.marker.setPopupContent(`
+          <div class="p-1 text-center font-sans">
+            <strong class="text-sm text-slate-800">${state.cityName}</strong>
+            <p class="text-xs text-blue-600 font-bold mt-0.5">${state.weather.temp}°C (${state.weather.condition})</p>
+            <span class="text-[10px] text-slate-500">습도 ${state.weather.humidity}% • 풍속 ${state.weather.windSpeed}m/s</span>
+          </div>
+        `).openPopup();
+      }
+    }
+
+    function selectCity(name, lat, lng) {
+      state.cityName = name;
+      state.lat = lat;
+      state.lng = lng;
+      if (state.map) {
+        state.map.setView([lat, lng], 12);
+      }
+      fetchWeatherData(lat, lng);
+    }
+
+    // Generate Outfit Recommendation Text & Curated Photos (Mood & Sensitivity)
+    function generateOutfitRecommendation() {
+      const mood = document.getElementById('styleMoodSelect').value;
+      const sensitivity = document.getElementById('sensitivitySelect').value;
+      
+      let effectiveTemp = state.weather.feelsLike;
+      
+      // Sensitivity Adjustment
+      if (sensitivity === 'Cold Sensitive') {
+        effectiveTemp -= 3; // Evaluate as colder so it recommends warmer layer
+      } else if (sensitivity === 'Heat Sensitive') {
+        effectiveTemp += 3; // Evaluate as warmer so it recommends lighter layer
+      }
+
+      // Determine Temperature Category
+      let tempCategory = 'mild';
+      if (effectiveTemp >= 28) tempCategory = 'hot';
+      else if (effectiveTemp >= 23) tempCategory = 'warm';
+      else if (effectiveTemp >= 17) tempCategory = 'mild';
+      else if (effectiveTemp >= 9) tempCategory = 'cool';
+      else tempCategory = 'freezing';
+
+      const moodData = MOOD_FASHION_DATABASE[mood] || MOOD_FASHION_DATABASE["Minimal & Modern"];
+      const currentFashion = moodData[tempCategory];
+
+      // Update Real Photos
+      document.getElementById('outfitPhoto1').src = currentFashion.photo1;
+      document.getElementById('outfitPhoto2').src = currentFashion.photo2;
+      document.getElementById('photoLabel1').innerText = currentFashion.topLabel;
+      document.getElementById('photoLabel2').innerText = currentFashion.bottomLabel;
+
+      document.getElementById('photoCategoryTitle').innerHTML = `
+        <i class="fa-solid fa-temperature-half text-blue-500 mr-1"></i> ${state.weather.temp}°C (체감 ${state.weather.feelsLike}°C) &bull; ${mood} 룩북
+      `;
+
+      // Render Text Outfit Recommendation Box
+      const resultBox = document.getElementById('outfitResultBox');
+      resultBox.innerHTML = `
+        <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+          <span class="font-bold text-slate-800 dark:text-slate-100 flex items-center text-xs">
+            <i class="fa-solid fa-shirt text-indigo-500 mr-1.5"></i> ${state.cityName} 실시간 맞춤 착장 스타일링
+          </span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-bold">
+            ${mood}
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <div class="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+            <strong class="text-blue-600 dark:text-blue-400 block text-[11px] mb-1">
+              <i class="fa-solid fa-vest mr-1"></i> 상의 & 아우터
+            </strong>
+            <p class="text-slate-700 dark:text-slate-200 font-semibold">${currentFashion.tops}</p>
+          </div>
+
+          <div class="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+            <strong class="text-indigo-600 dark:text-indigo-400 block text-[11px] mb-1">
+              <i class="fa-solid fa-socks mr-1"></i> 하의 & 신발
+            </strong>
+            <p class="text-slate-700 dark:text-slate-200 font-semibold">${currentFashion.bottoms}</p>
+          </div>
+        </div>
+
+        <div class="p-2.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 space-y-1">
+          <span class="text-slate-500 dark:text-slate-400 font-medium block text-[11px]">
+            <i class="fa-solid fa-glasses text-purple-500 mr-1"></i> 추천 악세서리 & 소품:
+            <span class="text-slate-700 dark:text-slate-200 font-semibold ml-1">${currentFashion.acc}</span>
+          </span>
+          <span class="text-slate-500 dark:text-slate-400 font-medium block text-[11px]">
+            <i class="fa-solid fa-lightbulb text-amber-500 mr-1"></i> 코디 팁:
+            <span class="text-slate-700 dark:text-slate-200 font-semibold ml-1">${currentFashion.tip}</span>
+          </span>
+        </div>
+      `;
+    }
+
+    function switchPhotoTab(tab) {
+      state.photoTab = tab;
+      const realBtn = document.getElementById('tabRealPhotosBtn');
+      const aiBtn = document.getElementById('tabAiPhotosBtn');
+      const realBox = document.getElementById('realPhotosBox');
+      const aiBox = document.getElementById('aiPhotosBox');
+
+      if (tab === 'real') {
+        realBtn.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-blue-600 text-white shadow-sm";
+        aiBtn.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200";
+        realBox.classList.remove('hidden');
+        aiBox.classList.add('hidden');
+      } else {
+        aiBtn.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm";
+        realBtn.className = "flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200";
+        aiBox.classList.remove('hidden');
+        realBox.classList.add('hidden');
+      }
+    }
+
+    // Generate AI Lookbook Image using Gemini API
+    async function generateAiLookbookImage() {
+      const mood = document.getElementById('styleMoodSelect').value;
+      const sensitivity = document.getElementById('sensitivitySelect').value;
+      
+      const spinner = document.getElementById('aiImageSpinner');
+      const imgEl = document.getElementById('aiLookbookImage');
+      const placeholder = document.getElementById('aiImagePlaceholder');
+      const badge = document.getElementById('aiImageBadge');
+
+      spinner.classList.remove('hidden');
+      placeholder.classList.add('hidden');
+      imgEl.classList.add('hidden');
+      badge.classList.add('hidden');
+
+      const promptText = `A high-end realistic fashion editorial lookbook photography of a fashionable Korean model in ${state.cityName}. Weather condition: ${state.weather.condition}, Temperature: ${state.weather.temp} degrees Celsius (${state.weather.isDay ? 'Daytime' : 'Night time'}). Fashion style mood: ${mood}, sensitivity: ${sensitivity}. Clean cinematic street style background, trendy outfit composition, 8k resolution studio lighting.`;
+
+      const apiKey = state.userApiKey || "";
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`;
+
+      const payload = {
+        contents: [{
+          role: 'user',
+          parts: [{ text: promptText }]
+        }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          imageConfig: { aspectRatio: "4:3" }
+        }
+      };
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        const part = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+
+        if (part && part.inlineData && part.inlineData.data) {
+          imgEl.src = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+          imgEl.classList.remove('hidden');
+          badge.innerHTML = `<i class="fa-solid fa-sparkles text-amber-300"></i> Gemini AI • ${mood}`;
+          badge.classList.remove('hidden');
+          showToast("✨ Gemini AI 화보가 생성되었습니다!", "success");
+        } else {
+          // Fallback to high-quality Unsplash editorial lookbook image
+          const fallbackPhotos = MOOD_FASHION_DATABASE[mood] ? MOOD_FASHION_DATABASE[mood].warm.photo1 : "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80";
+          imgEl.src = fallbackPhotos;
+          imgEl.classList.remove('hidden');
+          badge.innerHTML = `<i class="fa-solid fa-camera text-indigo-300"></i> ${mood} 패션 화보`;
+          badge.classList.remove('hidden');
+          showToast("AI 화보를 연출하였습니다.", "info");
+        }
+      } catch (err) {
+        console.error("AI Image Generation Error:", err);
+        const fallbackPhotos = MOOD_FASHION_DATABASE[mood] ? MOOD_FASHION_DATABASE[mood].warm.photo1 : "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&q=80";
+        imgEl.src = fallbackPhotos;
+        imgEl.classList.remove('hidden');
+        badge.innerHTML = `<i class="fa-solid fa-camera text-indigo-300"></i> ${mood} 패션 화보`;
+        badge.classList.remove('hidden');
+        showToast("패션 화보 연출이 완료되었습니다.", "info");
+      } finally {
+        spinner.classList.add('hidden');
+      }
+    }
+
+    // Setup Search Autocomplete
+    function setupAutocomplete(inputId, dropdownId, btnId) {
+      const input = document.getElementById(inputId);
+      const dropdown = document.getElementById(dropdownId);
+      const btn = document.getElementById(btnId);
+
+      if (!input || !dropdown) return;
+
+      input.addEventListener('input', function() {
+        const query = this.value.trim().toLowerCase();
+        if (query.length < 1) {
+          dropdown.classList.add('hidden');
+          return;
+        }
+
+        const matches = CITY_DATABASE.filter(c => 
+          c.name.toLowerCase().includes(query) || c.fullName.toLowerCase().includes(query)
+        );
+
+        if (matches.length > 0) {
+          dropdown.innerHTML = matches.map(c => `
+            <div onclick="selectCity('${c.name}', ${c.lat}, ${c.lng}); document.getElementById('${dropdownId}').classList.add('hidden');" 
+              class="px-4 py-2.5 hover:bg-blue-50 dark:hover:bg-slate-700 cursor-pointer text-xs flex items-center justify-between border-b border-slate-100 dark:border-slate-700/50 last:border-none">
+              <span class="font-semibold text-slate-800 dark:text-slate-200"><i class="fa-solid fa-location-dot text-blue-500 mr-2"></i>${c.fullName}</span>
+              <span class="text-[10px] text-slate-400 font-mono">${c.lat.toFixed(2)}, ${c.lng.toFixed(2)}</span>
+            </div>
+          `).join('');
+          dropdown.classList.remove('hidden');
+        } else {
+          dropdown.innerHTML = `
+            <div class="px-4 py-3 text-xs text-slate-400 text-center">
+              '<strong class="text-slate-600 dark:text-slate-300">${query}</strong>' 검색 결과. Enter/검색 버튼을 누르면 전세계 위치를 탐색합니다.
+            </div>
+          `;
+          dropdown.classList.remove('hidden');
+        }
+      });
+
+      // Handle Enter / Button Click Search using Open-Meteo Geocoding
+      async function executeSearch() {
+        const query = input.value.trim();
+        if (!query) return;
+        dropdown.classList.add('hidden');
+
+        try {
+          const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=ko&format=json`);
+          const data = await res.json();
+          if (data && data.results && data.results.length > 0) {
+            const place = data.results[0];
+            selectCity(place.name, place.latitude, place.longitude);
+            showToast(`'${place.name}' 날씨 정보 조회가 완료되었습니다.`, "success");
+          } else {
+            showToast(`'${query}' 도시 위치를 찾을 수 없습니다.`, "error");
+          }
+        } catch (e) {
+          showToast("도시 검색 중 오류가 발생했습니다.", "error");
+        }
+      }
+
+      input.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') executeSearch();
+      });
+
+      if (btn) btn.addEventListener('click', executeSearch);
+
+      // Close dropdown when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    // App Initialization on Window Load
+    window.onload = function() {
+      initMap();
+      fetchWeatherData(state.lat, state.lng);
+
+      setupAutocomplete('searchInput', 'searchSuggestions', 'searchBtn');
+      setupAutocomplete('searchInputMobile', 'searchSuggestionsMobile', 'searchBtnMobile');
+
+      // GPS Button Listener
+      document.getElementById('gpsBtn').addEventListener('click', function() {
+        if (navigator.geolocation) {
+          showToast("현재 위치 정보 수신 중...", "info");
+          navigator.geolocation.getCurrentPosition(
+            async (pos) => {
+              const lat = pos.coords.latitude;
+              const lng = pos.coords.longitude;
+              const fetchedName = await reverseGeocode(lat, lng);
+              selectCity(fetchedName, lat, lng);
+              showToast("현재 내 위치로 이동했습니다.", "success");
+            },
+            (err) => {
+              showToast("GPS 위치 정보를 불러올 수 없습니다.", "error");
+            }
+          );
+        } else {
+          showToast("이 브라우저에서는 GPS를 지원하지 않습니다.", "error");
+        }
+      });
+
+      // Dark Mode Toggle
+      document.getElementById('themeToggle').addEventListener('click', function() {
+        document.documentElement.classList.toggle('dark');
+      });
+
+      // API Key Modal Controls
+      const modal = document.getElementById('apiKeyModal');
+      document.getElementById('apiKeyModalBtn').addEventListener('click', () => {
+        document.getElementById('customApiKeyInput').value = state.userApiKey;
+        modal.classList.remove('hidden');
+      });
+      document.getElementById('closeModalBtn').addEventListener('click', () => {
+        modal.classList.add('hidden');
+      });
+      document.getElementById('saveApiKeyBtn').addEventListener('click', () => {
+        const val = document.getElementById('customApiKeyInput').value.trim();
+        state.userApiKey = val;
+        localStorage.setItem('weatherfit_gemini_key', val);
+        modal.classList.add('hidden');
+        showToast("Gemini API 키가 저장되었습니다.", "success");
+      });
+    };
+  </script>
+</body>
+</html>
