@@ -1,0 +1,12 @@
+{
+  "name": "weatherfit-ai",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build step required for static frontend'"
+  },
+  "dependencies": {
+    "@google/genai": "^0.1.1"
+  }
+}
